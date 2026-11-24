@@ -59,6 +59,7 @@ module tb_cpu_eng_concur;
 
     // ---- 写口仲裁观测 ----
     wire        grant_cpu, grant_eng, arb_conflict;
+    wire        eng_stall;
     integer     saw_double_grant;
 
     integer i;
@@ -106,7 +107,9 @@ module tb_cpu_eng_concur;
         .dbg_rd_data(dbg_rd_data),
         .grant_cpu(grant_cpu),
         .grant_eng(grant_eng),
-        .arb_conflict(arb_conflict)
+        .arb_conflict(arb_conflict),
+        .cpu_stall(),
+        .eng_stall(eng_stall)
     );
 
     copy_engine #(.MEM_SIZE(WORDS)) u_eng (
@@ -122,6 +125,7 @@ module tb_cpu_eng_concur;
         .wr_addr(eng_wr_addr),
         .wr_data(eng_wr_data),
         .wr_req(eng_wr_req),
+        .wr_stall(eng_stall),
         .ack_done(ack_done),
         .ack_err(ack_err),
         .busy(busy),

@@ -11,7 +11,8 @@
  *  - 读口为同步 RAM 模型的组合读：FETCH 态给出 rd_addr/rd_req，当拍 rd_data 有效；
  *    真实 Gowin/ASIC RAM 有一拍读延迟，挂接时在引擎与 RAM 之间补一级读缓冲
  *    （参照 memory_fpga.v 的 read_data_r 做法），不改本 FSM 节拍。
- *  - 写口经 mem_write_arbiter 接到共享 RAM；本阶段不做并发，装载期核心停住。
+ *  - 写口经 mem_write_arbiter 接到共享 RAM；仲裁队列满时 wr_stall 置位，
+ *    WRITE 态停留重试，不推进指针、不丢当前字。
  */
 
 module copy_engine #(
@@ -35,6 +36,7 @@ module copy_engine #(
     output [11:0] wr_addr,
     output [30:0] wr_data,
     output        wr_req,
+    input         wr_stall,       // 仲裁器背压：1 = 写队列满，本拍停留重试
 
     // ---- 完成 / 错误握手 ----
     input         ack_done,
@@ -88,6 +90,9 @@ wire [12:0] dst_last = {1'b0, dst_r} + {1'b0, len_r} - 13'd1;
 
 wire src_oob = (src_r >= MEM_SIZE) || (src_last >= MEM_SIZE);
 wire dst_oob = (dst_r >= MEM_SIZE) || (dst_last >= MEM_SIZE);
+
+// 背压输入归一化：未接端口为 z/x 时视为未背压（0）
+wire wr_stall_i = (wr_stall === 1'b1);
 
 // ---- 内存口驱动 ----
 assign rd_addr = src_ptr_r;
@@ -162,10 +167,14 @@ always @(posedge clk or negedge resetn) begin
         end
 
         ST_WRITE: begin
-            src_ptr_r <= src_ptr_r + 12'd1;
-            dst_ptr_r <= dst_ptr_r + 12'd1;
-            remain_r  <= remain_r  - 12'd1;
-            state_r   <= ST_CHECK;
+            if (!wr_stall_i) begin
+                src_ptr_r <= src_ptr_r + 12'd1;
+                dst_ptr_r <= dst_ptr_r + 12'd1;
+                remain_r  <= remain_r  - 12'd1;
+                state_r   <= ST_CHECK;
+            end
+            // wr_stall_i=1：队列满，停留 WRITE 态；指针 / remain / 锁存字保持，
+            // wr_req 随 state 保持为 1，待 stall 撤销后下一拍入队再推进 CHECK。
         end
 
         ST_CHECK: begin

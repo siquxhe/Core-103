@@ -12,6 +12,9 @@
  *   B1 CPU 连续 4 条排队 -> 逐条 FIFO 顺序出队，地址/数据正确，最终排空
  *   B2 双主各 3 条交错入队 -> 轮转出队，双方条目全部出完、不饿死
  *   B3 空队时 full 标志为 0
+ *   C1 双主突发填满 CPU 队列 -> full/stall 同位置 1
+ *   C2 满队期新请求被拒、队头不覆盖、标记条目不入队不排出
+ *   C3 排空后撤消背压，重试请求成功入队并出队
  */
 
 `timescale 1ns/1ps
@@ -36,6 +39,8 @@ module tb_arbiter;
     wire        conflict;
     wire        cpu_full;
     wire        eng_full;
+    wire        cpu_stall;
+    wire        eng_stall;
 
     mem_write_arbiter #(.FIFO_DEPTH(4)) u_arb (
         .clk          (clk),
@@ -53,7 +58,9 @@ module tb_arbiter;
         .grant_eng    (grant_eng),
         .conflict     (conflict),
         .cpu_full     (cpu_full),
-        .eng_full     (eng_full)
+        .eng_full     (eng_full),
+        .cpu_stall    (cpu_stall),
+        .eng_stall    (eng_stall)
     );
 
     integer checks;
@@ -78,6 +85,9 @@ module tb_arbiter;
 
     integer i, k;
     integer c_cnt, e_cnt;
+    integer marker_seen;
+    integer full_hit, drained;
+    integer wp_full;
 
     initial begin
         checks = 0;
@@ -229,6 +239,66 @@ module tb_arbiter;
         $display("--- B3 empty full flags ---");
         check(cpu_full === 1'b0, "B3 cpu not full when empty");
         check(eng_full === 1'b0, "B3 eng not full when empty");
+
+        // ---- C 组：满队背压定向自检 ----
+        $display("--- C fifo full backpressure ---");
+        // C0 前置：进入前双队为空
+        check(cpu_full === 1'b0, "C0 cpu not full before fill");
+        check(eng_full === 1'b0, "C0 eng not full before fill");
+
+        // 双主持续双待突发，CPU 入队速率高于轮转出队速率，直到 CPU 队列填满
+        c_cnt = 0; e_cnt = 0; full_hit = 0;
+        for (i = 0; i < 40 && !full_hit; i = i + 1) begin
+            cpu_wr_req  = 1'b1;
+            cpu_wr_addr = 12'h400 + i[11:0];
+            cpu_wr_data = 31'h4000 + i;
+            eng_wr_req  = 1'b1;
+            eng_wr_addr = 12'h500 + i[11:0];
+            eng_wr_data = 31'h5000 + i;
+            @(posedge clk); #1;
+            if (grant_cpu) c_cnt = c_cnt + 1;
+            if (grant_eng) e_cnt = e_cnt + 1;
+            if (cpu_full === 1'b1) begin
+                $display("C cpu full at cycle %0d", i);
+                full_hit = 1;
+            end
+        end
+
+        // C1 满队：full 与 stall 同值置位；记录满队写指针
+        check(cpu_full  === 1'b1, "C1 cpu full set");
+        check(cpu_stall === 1'b1, "C1 cpu stall asserted");
+        wp_full = u_arb.cpu_wp;
+
+        // C2 满队期注入特殊标记请求：入队护栏屏蔽，写指针不增（标记不入队），队头不被覆盖
+        cpu_wr_addr = 12'h9FF;
+        cpu_wr_data = 31'h3FFF_FFFF;
+        @(posedge clk); #1;
+        check(u_arb.cpu_wp === wp_full, "C2 rejected marker not enqueued (wp unchanged)");
+        if (grant_cpu)
+            check(ram_wr_addr !== 12'h9FF, "C2 marker not head (no overwrite)");
+
+        // 排空：撤双方请求，消化全部积压
+        cpu_wr_req = 1'b0;
+        eng_wr_req = 1'b0;
+        marker_seen = 0; drained = 0;
+        for (k = 0; k < 100 && !drained; k = k + 1) begin
+            @(posedge clk); #1;
+            if (grant_cpu && ram_wr_addr === 12'h9FF) marker_seen = 1;
+            if (cpu_full === 1'b0 && eng_full === 1'b0 && ram_wr_req === 1'b0) drained = 1;
+        end
+        check(marker_seen === 0, "C2 rejected marker never drained");
+        check(cpu_full === 1'b0, "C2 cpu queue drained");
+        check(eng_full === 1'b0, "C2 eng queue drained");
+
+        // C3 排空后重试一条 CPU：单主直通，入队沿同拍授权出队，队头即重试条目
+        cpu_wr_addr = 12'h777;
+        cpu_wr_data = 31'h7777_7777;
+        cpu_wr_req  = 1'b1;
+        @(posedge clk); #1;
+        check(ram_wr_addr === 12'h777, "C3 retried entry queued and served");
+        cpu_wr_req  = 1'b0;
+        repeat (2) @(posedge clk); #1;
+        check(ram_wr_req === 1'b0, "C3 drained after retry");
 
         $display("checks: %0d  failures: %0d", checks, fails);
         if (fails == 0) begin

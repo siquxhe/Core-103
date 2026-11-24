@@ -11,9 +11,10 @@
  *     可适配单拍请求的 FSM。
  *   - 单主队列非空：直通授权该主。
  *   - 双主同时非空：round-robin 轮转，上轮授权方本轮让位，避免一方饥饿。
- *   - 队列满时新请求不入队（背压点），full 标志引出供后续接写主侧反压；
+ *   - 队列满时新请求不入队（背压点）；stall 标志引出回接写主侧：stall=1
+ *     表示队列已满，写主须暂停发新请求 / 保持当前请求重试，直到 stall 撤销。
  *     满队期间队头不被覆盖。授权唯一，RAM 单写口，不会双写。
- *   - conflict 仅作双主同时待写的观测指示。
+ *   - full 为满队观测指示，与 stall 同值；conflict 仅作双待写观测指示。
  *
  * 时序：clk 上升沿，resetn 低有效复位。地址 12 位、数据 31 位，与既有内存口对齐。
  */
@@ -44,7 +45,10 @@ module mem_write_arbiter #(
     output        grant_eng,
     output        conflict,
     output        cpu_full,
-    output        eng_full
+    output        eng_full,
+    // 背压回接：1 = 对应队列已满，写主暂停发新请求 / 保持重试
+    output        cpu_stall,
+    output        eng_stall
 );
 
     localparam integer PW   = $clog2(FIFO_DEPTH);   // 指针位宽（不含满判定位）
@@ -70,6 +74,10 @@ module mem_write_arbiter #(
                       (cpu_wp[PW-1:0] == cpu_rp[PW-1:0]);
     assign eng_full = (eng_wp[PW] != eng_rp[PW]) &&
                       (eng_wp[PW-1:0] == eng_rp[PW-1:0]);
+
+    // 背压回接信号与满队标志同值
+    assign cpu_stall = cpu_full;
+    assign eng_stall = eng_full;
 
     // ---- 队头条目 ----
     wire [11:0] cpu_head_addr = cpu_q[cpu_rp[PW-1:0]][DW-1:31];

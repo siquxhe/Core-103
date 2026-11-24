@@ -53,6 +53,8 @@ module engine_mem_path #(
     output        grant_cpu,
     output        grant_eng,
     output        arb_conflict,
+    output        cpu_stall,
+    output        eng_stall,
 
     // ---- 调试口（testbench 预填 / 直读校验） ----
     input         dbg_wr_en,
@@ -66,6 +68,8 @@ module engine_mem_path #(
     wire        ram_wr_req;
     wire [11:0] ram_wr_addr;
     wire [30:0] ram_wr_data;
+    wire        cpu_stall_w;
+    wire        eng_stall_w;
 
     // ---- 引擎读/写口 ----
     wire        eng_rd_req;
@@ -93,7 +97,11 @@ module engine_mem_path #(
         .ram_wr_data  (ram_wr_data),
         .grant_cpu    (grant_cpu),
         .grant_eng    (grant_eng),
-        .conflict     (arb_conflict)
+        .conflict     (arb_conflict),
+        .cpu_full      (),
+        .eng_full      (),
+        .cpu_stall     (cpu_stall_w),
+        .eng_stall     (eng_stall_w)
     );
 
     copy_engine #(.MEM_SIZE(MEM_SIZE)) u_ce (
@@ -109,6 +117,7 @@ module engine_mem_path #(
         .wr_addr   (eng_wr_addr),
         .wr_data   (eng_wr_data),
         .wr_req    (eng_wr_req),
+        .wr_stall  (eng_stall_w),
         .ack_done  (ack_done),
         .ack_err   (ack_err),
         .busy      (eng_busy),
@@ -136,5 +145,8 @@ module engine_mem_path #(
 
     assign eng_rd_data = ram_rd_data;
     assign cpu_rd_data = ram_rd_data;
+
+    assign cpu_stall = cpu_stall_w;
+    assign eng_stall = eng_stall_w;
 
 endmodule

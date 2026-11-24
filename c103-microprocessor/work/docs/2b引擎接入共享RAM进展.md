@@ -191,7 +191,34 @@
 - B1 CPU 连续 4 条背靠背入队，FIFO 顺序出队，地址 / 数据逐条匹配，4 条全部排空；
 - B2 双主各 3 条交错入队，轮转出队，双方条目全部出完、不饿死，各自顺序正确；
 - B3 空队时 `full` 标志为 0。
-- **未覆盖分支**：满队（`full=1`）状态下"新请求丢弃且队头不被覆盖"的定向激励本轮未触发——双主轮转交替下单主难以堆积到 4 深；该路径待后续把 `full` 接回写主侧 stall 反压时补定向用例。
+- **未覆盖分支**：满队（`full=1`）状态下"新请求丢弃且队头不被覆盖"的定向激励在本节落地时未触发；该路径已在 2.12 接回 stall 反压后补定向用例覆盖。
+
+### 2.12 写主侧背压闭环：stall 接回引擎 / CPU 写主 + 满队定向自检
+
+**改造前缺口**：2.11 的 4 深队列把 `cpu_full / eng_full` 引出为观测标志，但未接回写主侧；满队时新请求在仲裁器内不入队（队头保护），写主侧不感知——引擎 FSM 仍按 WRITE 态推进、CPU 写主不挂起重试，满队路径只靠预留接口，未形成反压闭环。
+
+**本轮三层实现**：
+
+- **仲裁器层**（`work/rtl/mem_write_arbiter.v`）：新增 `cpu_stall / eng_stall` 背压输出，与对应队列 `full` 同值；保留 `cpu_full / eng_full` 兼容既有例化。
+- **引擎 FSM 层**（`work/rtl/copy_engine.v`；同源副本 `work/ip_core/rtl/copy_engine.v` 已同步）：新增 `wr_stall` 输入；内部 `wr_stall_i = (wr_stall === 1'b1)`，悬空 / z/x 归一化为 0；`ST_WRITE` 态背压置位时停留——不推进 `src_ptr / dst_ptr / remain`、不转 CHECK，保持当前写字重试；背压撤销后正常推进。未接 `wr_stall` 的既有 testbench 由归一化兼容。
+- **memory 集成层**（`work/ip_core/core/memory.v`）：新增 `cpu_stall / eng_stall` 端口与 `cpu_hold` 挂起寄存器；CPU 写主满队拍锁存挂起（地址 / 数据保持），`stall` 撤销后重试入队；挂起期 `writing` 保持，reply 仍跟随 `grant_cpu`，未授权期不回 reply。引擎子系统写主合并 `eng_active | ctrl_active`（搬运优先），旁路悬空电平用 `=== 1'b1` 归一化。
+- **通路封装层**（`work/rtl/engine_mem_path.v`）：仲裁 `eng_stall` 回接引擎 `wr_stall`，并引出 stall 观测口。
+- **集成 testbench**：`tb_engine_mem.v`、`tb_cpu_eng_concur.v` 在同时例化 memory + 引擎处补 `memory.eng_stall → copy_engine.wr_stall` 连线。
+
+**满队定向自检**（`work/tb_rtl/tb_arbiter.v`，日志 `rtl-arbiter-selftest.log`，61 判据 PASS / 0 FAIL）：
+
+- C0 前置双队为空；
+- C1 双主突发填满 CPU 队列，`full` 与 `stall` 同位置 1；
+- C2 满队期注入不同地址的标记请求：写指针 `wp` 不变（标记不入队）、队头不被覆盖；排空后标记条目从未排出；
+- C3 排空、背压撤销后重试一条 CPU 请求，单主直通入队并出队成功，最终排空。
+
+**时序要点 / 实测定位**：
+
+- 满队后出队一条 `full` 即松（4 深队列每拍可出一条），`stall` 非稳态保持；拒绝护栏以写指针不增为准，而非要求下一拍 `full` 仍为 1。
+- 单主直通下重试条目在入队沿同拍授权出队，观测须对准入队沿采样。
+- `output` 端口本身为隐式 wire，模块内不可再 `wire` 同名重复声明；reg 声明须在使用之前（本轮 elaboration 实测复现并修正）。
+
+**无回退**：RTL 三档（引擎 FSM 39 / 仲裁器 61 / 通路闭环 32）与全部集成回归（核心端到端 MD5 `75af6290…`、engine-mem、concur、engine-core、engine-ctrl、fw-poll、inst-cov、sub、abs、IO 三例 MD5）全部 PASS / 0 FAIL。
 
 ## 3. 关键事实（源码核实 + 本轮实测）
 
@@ -222,7 +249,7 @@
 
 - 引擎读口按组合读假设：FETCH 态给出 `rd_addr/rd_req`，当拍 `rd_data` 有效；行为 RAM 旁路 `eng_rd_data` 为组合读，与之匹配。
 - 引擎写口：`wr_req` 拍把 `wr_data` 写入 `wr_addr`。
-- CPU 与引擎写主经 `mem_write_arbiter` 收敛到唯一 RAM 写口（见 2.9 / 2.10 / 2.11）。仲裁器为时序版：每主 4 深同步请求队列 + round-robin 轮转防饥饿，双待写交替授权；CPU 写 reply 跟随授权拍回送。`cpu_full / eng_full` 背压标志已引出，尚未接回写主侧 stall 输入。
+- CPU 与引擎写主经 `mem_write_arbiter` 收敛到唯一 RAM 写口（见 2.9 / 2.10 / 2.11 / 2.12）。仲裁器为时序版：每主 4 深同步请求队列 + round-robin 轮转防饥饿，双待写交替授权；CPU 写 reply 跟随授权拍回送。`cpu_full / eng_full` 对应 `cpu_stall / eng_stall` 背压输出，已接回引擎 FSM `wr_stall` 与 CPU 写主挂起保持（见 2.12）。
 - 真实 Gowin / ASIC RAM 有一拍读延迟，挂接时需在引擎与 RAM 之间补一级读缓冲（参照原 S011 模型 `read_data_r` 做法），不改 FSM 节拍。
 
 ## 5. 后续未决项
@@ -232,7 +259,7 @@
   - 传送变体（005/015/045/055/064）除端到端加法 / IO 路径外的组合；
 - IO 八进制链路已由 2a `07_add1` 端到端覆盖：纸带输入解包、符号位 / 数字 / 结束符握手、八进制输出打包，`output.bin` MD5 与 ref 一致。
 - 引擎命令控制面：桥模型层 5-bit 符号流下发参数 + wait done 握手、核心固件层轮询 DONE 后写 ACK 均已在 iverilog 闭环验证（见 2.6 / 2.7）。**真实链路控制面入口与内存映射约定**仍待与最终集成形态对齐；当前固件子程序由调试口装入程序区，尚未经引擎第二段搬运装入。
-- 写仲裁已在 2.10 / 2.11 升级为 4 深背压队列 + 轮转防饥饿的时序仲裁器，并发同拍不丢写、双方不被饿死。剩余边界：`full` 背压标志尚未接回 `copy_engine` / PU 写主侧 stall，满队时新请求不入队但写主侧不感知；满队丢弃 / 队头保护的定向激励未覆盖；引擎大块突发与 CPU 零散写在长时间并发下的吞吐权衡、背靠背排队深度余量尚未压测。
+- 写仲裁已在 2.10 / 2.11 / 2.12 升级为 4 深背压队列 + 轮转防饥饿 + stall 回接写主侧的时序仲裁器：并发同拍不丢写、双方不被饿死，满队时引擎 FSM 停留重试、CPU 写主挂起保持，满队丢弃 / 队头保护已有定向自检覆盖。剩余边界：引擎大块突发与 CPU 零散写在长时间并发下的吞吐权衡、背靠背排队深度余量尚未压测；背压撤销后的恢复吞吐未做长时压测。
 - 源 / 目的重叠区复制方向策略（上移 / 下移）未定；RTL 当前按低地址 → 高地址逐字搬运。
 - 行为数组模型与 S011 的同步读 / 写一拍语义已对齐 2a，但未覆盖 S011 片选、位掩码等边界；上板前需回接真实 RAM 模型或 Gowin BRAM 并复核时序。
 - Flash / ROM 行为模型、块目录项（镜像 ID / 入口 / 字数 / 类型 / 校验 / 标志）与校验和为后续阶段。
@@ -252,6 +279,6 @@
 | 核心固件轮询 DONE → 写 ACK 握手（含 DONE 镜像清零） | `regress/fw-poll.log` | 7 PASS / 0 FAIL，引擎回 IDLE、ACK 自清，E2E PASS |
 | 并发公平仲裁集成（引擎搬运 ↔ CPU 写并发，挂起 / 轮转 / 数据隔离 / 互斥） | `regress/cpu-eng-concur.log` | 20 PASS / 0 FAIL，CONCURRENCY PASS |
 | RTL 引擎 FSM 自检 | `regress/rtl-engine-selftest.log` | 39 判据 PASS |
-| RTL 写仲裁自检（4 深背压队列 + 轮转防饥饿 + FIFO 顺序 / 不饿死） | `regress/rtl-arbiter-selftest.log` | 51 判据 PASS |
+| RTL 写仲裁自检（4 深背压队列 + 轮转防饥饿 + FIFO 顺序 / 不饿死 + 满队拒绝 / 队头保护 / 排空重试） | `regress/rtl-arbiter-selftest.log` | 61 判据 PASS |
 | RTL 通路闭环自检 | `regress/rtl-path-loop.log` | 32 判据 PASS |
 | 既有 Verilator 基线 | `verify-verilator/test/output.bin` | MD5 `de88360aa7c21c3e07e771bec9f8e150`，未回退 |

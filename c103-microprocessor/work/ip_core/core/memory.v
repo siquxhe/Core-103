@@ -57,7 +57,10 @@ module memory #(
     // ---- 写口仲裁观测（CPU / 引擎子系统授权与冲突指示） ----
     output        grant_cpu,
     output        grant_eng,
-    output        arb_conflict
+    output        arb_conflict,
+    // 仲裁背压回接：1 = 对应写主队列已满
+    output        cpu_stall,
+    output        eng_stall
 );
 
     reg [30:0] mem [0:WORDS-1];
@@ -76,15 +79,27 @@ module memory #(
     reg reading;
     reg write_finish_r;
     reg read_finish_r;
+    reg cpu_hold;
 
-    // 写数据 / 地址锁存（do_mem_write 拍）
+    // 写数据 / 地址锁存（do_mem_write 拍刷新；挂起期间保持旧值）
     always @(posedge clk) begin
         if (~resetn) begin
             write_data_r <= 31'b0;
             addr_r       <= 12'b0;
-        end else if (do_mem_write) begin
+        end else if (do_mem_write && !cpu_hold) begin
             write_data_r <= write_data;
             addr_r       <= addr;
+        end
+    end
+
+    // CPU 写挂起保持：满队拍未入队则置 hold；stall 撤销（有空位）后释放
+    always @(posedge clk or negedge resetn) begin
+        if (!resetn) begin
+            cpu_hold <= 1'b0;
+        end else if (cpu_hold) begin
+            if (!cpu_stall) cpu_hold <= 1'b0;
+        end else if (do_mem_write && cpu_stall) begin
+            cpu_hold <= 1'b1;
         end
     end
 
@@ -128,7 +143,11 @@ module memory #(
         .ram_wr_data  (ram_wr_data),
         .grant_cpu    (grant_cpu),
         .grant_eng    (grant_eng),
-        .conflict     (arb_conflict)
+        .conflict     (arb_conflict),
+        .cpu_full      (),
+        .eng_full      (),
+        .cpu_stall     (cpu_stall),
+        .eng_stall     (eng_stall)
     );
 
     // 唯一功能写口经仲裁器落数组；dbg 调试写旁路保留（复位/预填期使用）。
@@ -150,7 +169,7 @@ module memory #(
 
     always @(posedge clk) begin
         if (~resetn) writing <= 1'b0;
-        else writing <= do_mem_write;
+        else writing <= do_mem_write || cpu_hold;
     end
 
     // 写 reply 跟随 CPU 授权拍：被引擎抢占挂起期间 reply 一并推迟，
