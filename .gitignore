@@ -1,0 +1,12 @@
+# 编译 / 仿真中间产物
+*.vvp
+*.vcd
+*.o
+*.exe
+*.orig
+
+# 回归日志（可由 run_*.ps1 / run_rtl_sim.ps1 重跑生成）
+*.log
+
+# 仿真生成输出（参考基线 *.bin.ref 与输入 input.bin / task.seq 保留）
+**/test/output.bin

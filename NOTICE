@@ -1,0 +1,51 @@
+# NOTICE — 来源与归属说明
+
+## 项目
+
+Core-103：中国 103 机（苏联 M-3 仿制型 / DJS-1）向微处理器形态演进的 FPGA 软核复刻与验证工程。
+
+本仓库整体以 **GPLv3** 许可发布，许可文本见根目录 `LICENSE`。
+
+## 上游来源
+
+本工程在公开的 **Computer-103** 项目基础上二次开发。该上游项目代码于 2022 年冻结，原维护者 cebarobot，包含以下仓库：
+
+- `hardware`：103 计算机现代硬件电路源码（Verilog）
+- `verify-verilator`：Verilator 验证链路（`src_hw` 与 hardware 同源）
+- `test-program`：103 机测试程序集
+
+下列文件派生自上述上游仓库。上游既有代码的版权归原作者所有；本仓库作为其衍生作品，继续按 GPLv3 开源。
+
+### 原样继承（与上游内容一致）
+
+- `c103-microprocessor/work/ip_core/core/arith_ctrl.v`
+- `c103-microprocessor/work/ip_core/core/arith_unit.v`
+- `c103-microprocessor/work/ip_core/core/io_unit.v`
+- `c103-microprocessor/work/ip_core/core/operator.v`
+- `c103-microprocessor/work/ip_core/core/pulse_unit.v`
+- `c103-microprocessor/work/ip_core/core/select_reg.v`
+- `c103-microprocessor/work/ip_core/core/start_reg.v`
+- `c103-microprocessor/work/ip_core/include/S011HD1P_X32Y2D128.v`
+- `c103-microprocessor/work/ip_core/include/S011HD1P_X32Y2D128_BW.v`
+- `c103-microprocessor/work/ip_core/shell/button_pulse.v`
+- `c103-microprocessor/work/ip_core/shell/driver_74lv165.v`
+- `c103-microprocessor/work/ip_core/shell/driver_74lv595.v`
+- `c103-microprocessor/work/ip_core/shell/hardware_top.v`
+- `c103-microprocessor/work/ip_core/shell/switch_level.v`
+- `c103-microprocessor/work/ip_core/tb/sim_output.v`
+- `c103-microprocessor/work/ip_core/test/input.bin`
+- `c103-microprocessor/work/ip_core/test/task.seq`
+- `c103-microprocessor/work/ip_core/test/output.bin.ref`
+- `c103-microprocessor/work/ip_core/test/oct/input.bin`
+- `c103-microprocessor/work/ip_core/test/oct/task.seq`
+- `c103-microprocessor/work/ip_core/test/oct/output.bin.ref`
+
+### 在上游基础上修改派生
+
+- `c103-microprocessor/work/ip_core/core/core_top.v`
+- `c103-microprocessor/work/ip_core/core/memory.v`
+- `c103-microprocessor/work/ip_core/tb/sim_input.v`
+
+## 自研部分
+
+除上述清单外，本仓库其余文件（拷贝引擎 / 写仲裁器 / 通路封装 / RAM 模型等自研 RTL、C 行为模型与桥接、自研 testbench、回归脚本、构建文件、设计与进展文档）均为本工程新增，版权归本仓库维护者 siquxhe 所有，同样以 GPLv3 许可发布。
