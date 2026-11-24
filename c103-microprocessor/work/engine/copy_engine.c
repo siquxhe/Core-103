@@ -41,6 +41,7 @@ void ce_reset(copy_engine_t *ce)
     ce->dst_ptr = 0;
     ce->remain = 0;
     ce->latch_word = 0;
+    ce->reverse = 0u;
 }
 
 void ce_bind_memory(copy_engine_t *ce,
@@ -81,8 +82,17 @@ void ce_step(copy_engine_t *ce)
             ce->busy = 0u;
             ce->state = CE_ERR;
         } else {
-            ce->src_ptr = ce->src;
-            ce->dst_ptr = ce->dst;
+            uint32_t s_last = (uint32_t)ce->src + ce->len - 1u;
+            uint32_t d_last = (uint32_t)ce->dst + ce->len - 1u;
+            uint8_t  rev = (ce->dst > ce->src) && (ce->dst <= s_last);
+            ce->reverse = rev;
+            if (!rev) {
+                ce->src_ptr = ce->src;
+                ce->dst_ptr = ce->dst;
+            } else {
+                ce->src_ptr = (uint16_t)s_last;
+                ce->dst_ptr = (uint16_t)d_last;
+            }
             ce->remain = ce->len;
             ce->state = CE_FETCH;
         }
@@ -96,8 +106,8 @@ void ce_step(copy_engine_t *ce)
 
     case CE_WRITE:
         ce->dst_mem[ce->dst_ptr] = ce->latch_word;
-        ce->src_ptr++;
-        ce->dst_ptr++;
+        if (!ce->reverse) { ce->src_ptr++; ce->dst_ptr++; }
+        else              { ce->src_ptr--; ce->dst_ptr--; }
         ce->remain--;
         ce->state = CE_CHECK;
         break;

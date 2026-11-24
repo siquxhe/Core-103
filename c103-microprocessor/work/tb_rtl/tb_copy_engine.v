@@ -7,6 +7,8 @@
  *   E3 目的越界 -> DST_OOB
  *   E4 零长度   -> ZERO_LEN
  *   E5 握手后复装成功
+ *   F1 重叠·目的在源低侧（D<S）：正向复制，目的区落源快照值
+ *   F2 重叠·目的在源高侧（D>S 重叠）：反向复制，目的区落源快照值
  *
  * 判据全部内置：PASS/FAIL 逐条打印，结束汇总 RESULT。
  */
@@ -51,6 +53,7 @@ module tb_copy_engine;
 
     // ---- 同步 RAM 模型 ----
     reg [30:0] ram [0:MEM_SIZE-1];
+    reg [30:0] snap [0:3];   // 重叠用例：搬运前源值快照（搬运后源区被改写，不可回读）
     assign rd_data = ram[rd_addr];
     always @(posedge clk) begin
         if (wr_req) ram[wr_addr] <= wr_data;
@@ -239,6 +242,52 @@ module tb_copy_engine;
         check(err === 1'b0, "E5 err clear");
         for (i = 0; i < 2; i = i + 1)
             check(ram[210+i] === ram[100+i], "E5 word copied");
+
+        ack_done = 1'b1;
+        @(posedge clk); #1;
+        ack_done = 1'b0;
+
+        // ============ F1 重叠·目的在源低侧（D<S）：正向复制 ============
+        $display("--- F1 overlap dst below src (forward) ---");
+        for (i = 0; i < 4; i = i + 1) begin
+            ram[200+i] = 31'h2000_0000 + i;
+            snap[i]     = ram[200+i];
+        end
+        // 目的区独有部分（198/199）填哨兵；200/201 属源区，保留源值不覆盖
+        ram[198] = 31'h7FFF_FFFF;
+        ram[199] = 31'h7FFF_FFFF;
+
+        launch(12'd200, 12'd198, 12'd4);
+        wait_finish(timed_out);
+
+        check(!timed_out, "F1 no timeout");
+        check(done === 1'b1, "F1 done set");
+        check(err  === 1'b0, "F1 err clear");
+        for (i = 0; i < 4; i = i + 1)
+            check(ram[198+i] === snap[i], "F1 forward overlap word");
+
+        ack_done = 1'b1;
+        @(posedge clk); #1;
+        ack_done = 1'b0;
+
+        // ============ F2 重叠·目的在源高侧（D>S，重叠）：反向复制 ============
+        $display("--- F2 overlap dst above src (reverse) ---");
+        for (i = 0; i < 4; i = i + 1) begin
+            ram[300+i] = 31'h3000_0000 + i;
+            snap[i]     = ram[300+i];
+        end
+        // 目的区独有部分（304/305）填哨兵；302/303 属源区，保留源值不覆盖
+        ram[304] = 31'h7FFF_FFFF;
+        ram[305] = 31'h7FFF_FFFF;
+
+        launch(12'd300, 12'd302, 12'd4);
+        wait_finish(timed_out);
+
+        check(!timed_out, "F2 no timeout");
+        check(done === 1'b1, "F2 done set");
+        check(err  === 1'b0, "F2 err clear");
+        for (i = 0; i < 4; i = i + 1)
+            check(ram[302+i] === snap[i], "F2 reverse overlap word");
 
         ack_done = 1'b1;
         @(posedge clk); #1;

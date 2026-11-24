@@ -52,6 +52,7 @@ typedef struct {
     uint16_t dst_ptr;
     uint16_t remain;
     uint32_t latch_word; /* FETCH 锁存的待写字 */
+    uint8_t  reverse;    /* 1 = 反向（高->低，重叠目的在源高侧）；0 = 正向（低->高） */
 
     /* ---- 内存抽象接口（外接，引擎不持有所有权） ---- */
     const uint32_t *src_mem;

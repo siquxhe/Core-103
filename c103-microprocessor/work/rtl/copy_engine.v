@@ -13,6 +13,15 @@
  *    （参照 memory_fpga.v 的 read_data_r 做法），不改本 FSM 节拍。
  *  - 写口经 mem_write_arbiter 接到共享 RAM；仲裁队列满时 wr_stall 置位，
  *    WRITE 态停留重试，不推进指针、不丢当前字。
+ *
+ * 重叠区复制方向（自适应 memcpy，字粒度）：
+ *  源 [S, S+L-1]、目的 [D, D+L-1]，L>0 且已过 OOB 检查。
+ *  - D <= S：正向（低地址 -> 高地址）。目的不在源高侧，写低地址目的不会覆盖
+ *    尚未读取的源高地址；D==S 为同区间自拷贝，结果一致。
+ *  - D > S 且 D <= S+L-1（重叠、目的在源高侧）：反向（高地址 -> 低地址），
+ *    从 S+L-1 / D+L-1 起逐字递减，写高地址不会覆盖低地址尚未读取的源字。
+ *  - D >= S+L（不重叠）：正向即可。
+ *  判定 reverse = (D > S) && (D <= S+L-1)。
  */
 
 module copy_engine #(
@@ -75,6 +84,7 @@ reg [11:0] src_ptr_r;
 reg [11:0] dst_ptr_r;
 reg [11:0] remain_r;
 reg [30:0] latch_word_r;
+reg        dir_r;        // 1 = 反向（高->低）；0 = 正向（低->高）
 
 reg        busy_r;
 reg        done_r;
@@ -90,6 +100,9 @@ wire [12:0] dst_last = {1'b0, dst_r} + {1'b0, len_r} - 13'd1;
 
 wire src_oob = (src_r >= MEM_SIZE) || (src_last >= MEM_SIZE);
 wire dst_oob = (dst_r >= MEM_SIZE) || (dst_last >= MEM_SIZE);
+
+// 重叠且目的在源高侧 -> 反向复制；其余情形正向
+wire reverse_copy = (dst_r > src_r) && ({1'b0, dst_r} <= src_last);
 
 // 背压输入归一化：未接端口为 z/x 时视为未背压（0）
 wire wr_stall_i = (wr_stall === 1'b1);
@@ -121,6 +134,7 @@ always @(posedge clk or negedge resetn) begin
         dst_ptr_r   <= 12'd0;
         remain_r    <= 12'd0;
         latch_word_r<= 31'd0;
+        dir_r       <= 1'b0;
         busy_r      <= 1'b0;
         done_r      <= 1'b0;
         err_r       <= 1'b0;
@@ -154,8 +168,14 @@ always @(posedge clk or negedge resetn) begin
                 busy_r     <= 1'b0;
                 state_r    <= ST_ERR;
             end else begin
-                src_ptr_r <= src_r;
-                dst_ptr_r <= dst_r;
+                dir_r <= reverse_copy;
+                if (!reverse_copy) begin
+                    src_ptr_r <= src_r;
+                    dst_ptr_r <= dst_r;
+                end else begin
+                    src_ptr_r <= src_last[11:0];
+                    dst_ptr_r <= dst_last[11:0];
+                end
                 remain_r  <= len_r;
                 state_r   <= ST_FETCH;
             end
@@ -168,8 +188,13 @@ always @(posedge clk or negedge resetn) begin
 
         ST_WRITE: begin
             if (!wr_stall_i) begin
-                src_ptr_r <= src_ptr_r + 12'd1;
-                dst_ptr_r <= dst_ptr_r + 12'd1;
+                if (!dir_r) begin
+                    src_ptr_r <= src_ptr_r + 12'd1;
+                    dst_ptr_r <= dst_ptr_r + 12'd1;
+                end else begin
+                    src_ptr_r <= src_ptr_r - 12'd1;
+                    dst_ptr_r <= dst_ptr_r - 12'd1;
+                end
                 remain_r  <= remain_r  - 12'd1;
                 state_r   <= ST_CHECK;
             end

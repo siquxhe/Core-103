@@ -220,6 +220,31 @@
 
 **无回退**：RTL 三档（引擎 FSM 39 / 仲裁器 61 / 通路闭环 32）与全部集成回归（核心端到端 MD5 `75af6290…`、engine-mem、concur、engine-core、engine-ctrl、fw-poll、inst-cov、sub、abs、IO 三例 MD5）全部 PASS / 0 FAIL。
 
+### 2.13 源 / 目的重叠区复制方向策略（自适应 memcpy）
+
+**策略敲定**：字粒度，源 `[S, S+L-1]`、目的 `[D, D+L-1]`，`L>0` 且过 OOB 检查后，按 S/D/L 比较选择步进方向：
+
+| 条件 | 关系 | 方向 | 理由 |
+|---|---|---|---|
+| `D ≤ S` | 目的不在源高侧 | 正向（低→高） | 写低地址目的不覆盖尚未读取的源高地址；`D==S` 为同区间自拷贝，结果一致 |
+| `D > S` 且 `D ≤ S+L-1` | 重叠，目的在源高侧 | 反向（高→低） | 从末字起逐字递减，写高地址不会覆盖低地址尚未读取的源字 |
+| `D ≥ S+L` | 不重叠 | 正向 | 无覆盖风险 |
+
+判定：`reverse = (D > S) && (D ≤ S+L-1)`。
+
+**实现**：
+
+- **RTL**（`work/rtl/copy_engine.v`）：`dir_r` 方向寄存器；ARM 态按 `reverse` 初始化指针——正向取 `S/D`，反向取 `S+L-1 / D+L-1`；WRITE 态按方向 `+1 / −1` 步进；背压停留（`wr_stall`）语义不变。
+- **C 原型**（`work/engine/copy_engine.c` / `.h`）：同规则加 `reverse` 字段与反向指针步进，与 RTL 一一对应。
+
+**自检与证据**（`work/tb_rtl/tb_copy_engine.v`，日志 `rtl-engine-selftest.log`，53 判据 PASS / 0 FAIL）：
+
+- F1 重叠·目的在源低侧（`D<S`，正向）：目的区逐字落源快照值，4 字全匹配；
+- F2 重叠·目的在源高侧（`D>S` 重叠，反向）：目的区逐字落源快照值，4 字全匹配。
+- 判据以搬运前源值快照比对（重叠后源区本身被改写，不可回读源区）。
+
+**实测定位**：初版 testbench 的哨兵预填区与源区重叠，误把重叠源值覆盖成哨兵，表现为"前两字未落写"；修正为哨兵只填目的区独有部分后通过。RTL 方向逻辑本身无缺陷。
+
 ## 3. 关键事实（源码核实 + 本轮实测）
 
 ### 3.1 指令字编码
@@ -249,6 +274,7 @@
 
 - 引擎读口按组合读假设：FETCH 态给出 `rd_addr/rd_req`，当拍 `rd_data` 有效；行为 RAM 旁路 `eng_rd_data` 为组合读，与之匹配。
 - 引擎写口：`wr_req` 拍把 `wr_data` 写入 `wr_addr`。
+- 搬运方向按重叠关系自适应（见 2.13）：目的在源高侧且重叠时反向高→低，其余正向低→高；指针步进方向由引擎内部按 S/D/L 判定，命令接口 `src/dst/len/go` 不变。
 - CPU 与引擎写主经 `mem_write_arbiter` 收敛到唯一 RAM 写口（见 2.9 / 2.10 / 2.11 / 2.12）。仲裁器为时序版：每主 4 深同步请求队列 + round-robin 轮转防饥饿，双待写交替授权；CPU 写 reply 跟随授权拍回送。`cpu_full / eng_full` 对应 `cpu_stall / eng_stall` 背压输出，已接回引擎 FSM `wr_stall` 与 CPU 写主挂起保持（见 2.12）。
 - 真实 Gowin / ASIC RAM 有一拍读延迟，挂接时需在引擎与 RAM 之间补一级读缓冲（参照原 S011 模型 `read_data_r` 做法），不改 FSM 节拍。
 
@@ -260,7 +286,7 @@
 - IO 八进制链路已由 2a `07_add1` 端到端覆盖：纸带输入解包、符号位 / 数字 / 结束符握手、八进制输出打包，`output.bin` MD5 与 ref 一致。
 - 引擎命令控制面：桥模型层 5-bit 符号流下发参数 + wait done 握手、核心固件层轮询 DONE 后写 ACK 均已在 iverilog 闭环验证（见 2.6 / 2.7）。**真实链路控制面入口与内存映射约定**仍待与最终集成形态对齐；当前固件子程序由调试口装入程序区，尚未经引擎第二段搬运装入。
 - 写仲裁已在 2.10 / 2.11 / 2.12 升级为 4 深背压队列 + 轮转防饥饿 + stall 回接写主侧的时序仲裁器：并发同拍不丢写、双方不被饿死，满队时引擎 FSM 停留重试、CPU 写主挂起保持，满队丢弃 / 队头保护已有定向自检覆盖。剩余边界：引擎大块突发与 CPU 零散写在长时间并发下的吞吐权衡、背靠背排队深度余量尚未压测；背压撤销后的恢复吞吐未做长时压测。
-- 源 / 目的重叠区复制方向策略（上移 / 下移）未定；RTL 当前按低地址 → 高地址逐字搬运。
+- 源 / 目的重叠区复制方向已敲定自适应策略（见 2.13）：目的在源高侧且重叠时反向高→低复制，其余正向低→高；F1/F2 重叠用例已覆盖。长块重叠搬运的吞吐与指针回绕边界尚未压测。
 - 行为数组模型与 S011 的同步读 / 写一拍语义已对齐 2a，但未覆盖 S011 片选、位掩码等边界；上板前需回接真实 RAM 模型或 Gowin BRAM 并复核时序。
 - Flash / ROM 行为模型、块目录项（镜像 ID / 入口 / 字数 / 类型 / 校验 / 标志）与校验和为后续阶段。
 
@@ -278,7 +304,7 @@
 | 命令块装配 + 桥模型握手（含 DONE/ERR 镜像清零） | `regress/engine-ctrl.log` | 12 PASS / 0 FAIL，saw_busy=1，落位 3 4 5，E2E PASS |
 | 核心固件轮询 DONE → 写 ACK 握手（含 DONE 镜像清零） | `regress/fw-poll.log` | 7 PASS / 0 FAIL，引擎回 IDLE、ACK 自清，E2E PASS |
 | 并发公平仲裁集成（引擎搬运 ↔ CPU 写并发，挂起 / 轮转 / 数据隔离 / 互斥） | `regress/cpu-eng-concur.log` | 20 PASS / 0 FAIL，CONCURRENCY PASS |
-| RTL 引擎 FSM 自检 | `regress/rtl-engine-selftest.log` | 39 判据 PASS |
+| RTL 引擎 FSM 自检（含越界 / 零长 / 复装 / 重叠正向·反向） | `regress/rtl-engine-selftest.log` | 53 判据 PASS |
 | RTL 写仲裁自检（4 深背压队列 + 轮转防饥饿 + FIFO 顺序 / 不饿死 + 满队拒绝 / 队头保护 / 排空重试） | `regress/rtl-arbiter-selftest.log` | 61 判据 PASS |
 | RTL 通路闭环自检 | `regress/rtl-path-loop.log` | 32 判据 PASS |
 | 既有 Verilator 基线 | `verify-verilator/test/output.bin` | MD5 `de88360aa7c21c3e07e771bec9f8e150`，未回退 |
