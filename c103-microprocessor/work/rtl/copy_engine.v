@@ -7,10 +7,9 @@
  * 时序惯例与既有 RTL 一致：clk 上升沿，resetn 低有效复位。
  * 字宽 31 位（{sign, 30 数值位}），地址 12 位。
  *
- * 内存接口约定（本阶段）：
- *  - 读口为同步 RAM 模型的组合读：FETCH 态给出 rd_addr/rd_req，当拍 rd_data 有效；
- *    真实 Gowin/ASIC RAM 有一拍读延迟，挂接时在引擎与 RAM 之间补一级读缓冲
- *    （参照 memory_fpga.v 的 read_data_r 做法），不改本 FSM 节拍。
+ * 内存接口约定（对齐同步 BRAM）：
+ *  - 读口为同步读：FETCH 态给出 rd_addr/rd_req，BRAM 下一拍在 RD_WAIT 态
+ *    输出 rd_data，本引擎在 RD_WAIT 拍锁存；不再假设组合读当拍有效。
  *  - 写口经 mem_write_arbiter 接到共享 RAM；仲裁队列满时 wr_stall 置位，
  *    WRITE 态停留重试，不推进指针、不丢当前字。
  *
@@ -61,13 +60,15 @@ module copy_engine #(
 );
 
 // FSM 状态编码（对齐 copy_engine_t 枚举）
-localparam [2:0] ST_IDLE  = 3'd0;
-localparam [2:0] ST_ARM   = 3'd1;
-localparam [2:0] ST_FETCH = 3'd2;
-localparam [2:0] ST_WRITE = 3'd3;
-localparam [2:0] ST_CHECK = 3'd4;
-localparam [2:0] ST_DONE  = 3'd5;
-localparam [2:0] ST_ERR   = 3'd6;
+localparam [2:0] ST_IDLE     = 3'd0;
+localparam [2:0] ST_ARM      = 3'd1;
+localparam [2:0] ST_FETCH    = 3'd2;
+localparam [2:0] ST_WRITE    = 3'd3;
+localparam [2:0] ST_CHECK    = 3'd4;
+localparam [2:0] ST_DONE      = 3'd5;
+localparam [2:0] ST_ERR       = 3'd6;
+// 同步读等待拍：FETCH 拍给地址，BRAM 下一拍出数；本拍锁存 rd_data 后再写
+localparam [2:0] ST_RD_WAIT  = 3'd7;
 
 // 错误码（对齐 C 原型）
 localparam [1:0] ERR_NONE     = 2'd0;
@@ -109,7 +110,8 @@ wire wr_stall_i = (wr_stall === 1'b1);
 
 // ---- 内存口驱动 ----
 assign rd_addr = src_ptr_r;
-assign rd_req  = (state_r == ST_FETCH);
+// FETCH 与 RD_WAIT 两拍保持读请求/地址，覆盖 BRAM 一拍读延迟
+assign rd_req  = (state_r == ST_FETCH) || (state_r == ST_RD_WAIT);
 
 assign wr_addr = dst_ptr_r;
 assign wr_data = latch_word_r;
@@ -182,6 +184,12 @@ always @(posedge clk or negedge resetn) begin
         end
 
         ST_FETCH: begin
+            // 给出源地址/读请求；同步 BRAM 数据下一拍才有效，进入等待拍
+            state_r <= ST_RD_WAIT;
+        end
+
+        ST_RD_WAIT: begin
+            // rd_data 已由 BRAM 输出，锁存当前字，下一拍进 WRITE 落目的区
             latch_word_r <= rd_data;
             state_r      <= ST_WRITE;
         end

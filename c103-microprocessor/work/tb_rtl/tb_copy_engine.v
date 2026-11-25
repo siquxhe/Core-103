@@ -51,10 +51,12 @@ module tb_copy_engine;
     wire [2:0]  state;
     wire [11:0] remain;
 
-    // ---- 同步 RAM 模型 ----
+    // ---- 同步 RAM 模型（同步读，一拍延迟，对齐 BRAM 口径） ----
     reg [30:0] ram [0:MEM_SIZE-1];
     reg [30:0] snap [0:3];   // 重叠用例：搬运前源值快照（搬运后源区被改写，不可回读）
-    assign rd_data = ram[rd_addr];
+    reg [30:0] rd_data_r;
+    always @(posedge clk) rd_data_r <= ram[rd_addr];
+    assign rd_data = rd_data_r;
     always @(posedge clk) begin
         if (wr_req) ram[wr_addr] <= wr_data;
     end

@@ -77,6 +77,10 @@ module memory #(
     reg [11:0] addr_wr_r;
     reg [11:0] addr_rd_r;
 
+    // 引擎旁路同步读寄存器（对齐 BRAM 一拍延迟）；ctrl/dbg 配置/调试口
+    // 暂保留组合读，后续按端口收敛方案走 LUTRAM / 寄存器兜底。
+    reg [30:0] eng_rd_data_r;
+
     reg writing;
     reg reading;
     reg write_finish_r;
@@ -196,9 +200,14 @@ module memory #(
 
     assign {read_sign_to_ac, read_data_to_au} = read_data_r;
 
-    // 旁路 / 调试读（组合）
-    assign eng_rd_data = mem[eng_rd_addr];
+    // 引擎旁路同步读（对齐 BRAM 一拍延迟）；ctrl/dbg 保留组合读
+    always @(posedge clk) begin
+        if (~resetn) eng_rd_data_r <= 31'b0;
+        else         eng_rd_data_r <= mem[eng_rd_addr];
+    end
+
+    assign eng_rd_data  = eng_rd_data_r;
     assign ctrl_rd_data = mem[ctrl_rd_addr];
-    assign dbg_rd_data = mem[dbg_rd_addr];
+    assign dbg_rd_data  = mem[dbg_rd_addr];
 
 endmodule
