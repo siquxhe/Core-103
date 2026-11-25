@@ -281,10 +281,9 @@
 ## 5. 后续未决项
 
 - **已在 iverilog 端到端覆盖**：加、减、与、乘、除、无条件跳转（024）、074 绝对值跳转、条件跳转（034 正 / 负两路）、八进制与十进制 BCD 输入打包 / 输出解包。
-- **尚未单独验证**：
-  - 传送变体（005/015/045/055/064）除端到端加法 / IO 路径外的组合；
+- **尚未单独验证**：除下述已覆盖项外，其余未在 iverilog 单独跑过定向用例的指令组合仍待补。
 - IO 八进制链路已由 2a `07_add1` 端到端覆盖：纸带输入解包、符号位 / 数字 / 结束符握手、八进制输出打包，`output.bin` MD5 与 ref 一致。
-- 引擎命令控制面：桥模型层 5-bit 符号流下发参数 + wait done 握手、核心固件层轮询 DONE 后写 ACK 均已在 iverilog 闭环验证（见 2.6 / 2.7）。**真实链路控制面入口与内存映射约定**仍待与最终集成形态对齐；当前固件子程序由调试口装入程序区，尚未经引擎第二段搬运装入。
+- 引擎命令控制面：桥模型层 5-bit 符号流下发参数 + wait done 握手、核心固件层轮询 DONE 后写 ACK 均已在 iverilog 闭环验证（见 2.6 / 2.7）。**真实链路控制面入口与内存映射约定**仍待与最终集成形态对齐；P1-4 已打通引擎二段搬运真实装载链路——固件程序段、常量段、最终服务数据段先存介质源区，经引擎逐段搬运装入运行区（程序段 `1200→0000`、常量段 `1600→2000`、数据段 `1500→3000`），最后一轮不 drain、由固件轮询 DONE=1 后写 ACK 完成握手。
 - 写仲裁已在 2.10 / 2.11 / 2.12 升级为 4 深背压队列 + 轮转防饥饿 + stall 回接写主侧的时序仲裁器：并发同拍不丢写、双方不被饿死，满队时引擎 FSM 停留重试、CPU 写主挂起保持，满队丢弃 / 队头保护已有定向自检覆盖。剩余边界：引擎大块突发与 CPU 零散写在长时间并发下的吞吐权衡、背靠背排队深度余量尚未压测；背压撤销后的恢复吞吐未做长时压测。
 - 源 / 目的重叠区复制方向已敲定自适应策略（见 2.13）：目的在源高侧且重叠时反向高→低复制，其余正向低→高；F1/F2 重叠用例已覆盖。长块重叠搬运的吞吐与指针回绕边界尚未压测。
 - 行为数组模型与 S011 的同步读 / 写一拍语义已对齐 2a，但未覆盖 S011 片选、位掩码等边界；上板前需回接真实 RAM 模型或 Gowin BRAM 并复核时序。
@@ -302,9 +301,10 @@
 | 074 绝对值跳转 | `regress/abs-cov.log` | 4 PASS / 0 FAIL（跳 c2、b 取绝对值） |
 | IO 八进制 / 十进制 BCD / 停机 | `regress/io-cases.log` | io `67146a4f…`、io2 `843b2c87…`、io3 `1437c3c3…`，MD5 全匹配 |
 | 命令块装配 + 桥模型握手（含 DONE/ERR 镜像清零） | `regress/engine-ctrl.log` | 12 PASS / 0 FAIL，saw_busy=1，落位 3 4 5，E2E PASS |
-| 核心固件轮询 DONE → 写 ACK 握手（含 DONE 镜像清零） | `regress/fw-poll.log` | 7 PASS / 0 FAIL，引擎回 IDLE、ACK 自清，E2E PASS |
+| 核心固件轮询 DONE → 写 ACK 握手（引擎三段搬运真实装载 + DONE 镜像清零） | `regress/fw-poll.log` | 18 PASS / 0 FAIL，引擎回 IDLE、ACK 自清，E2E PASS |
+| 传送变体定向覆盖（005/015/045/055/064，对齐 103.c 分支语义） | `regress/move-cov.log` | 5 PASS / 0 FAIL：005=11、015=22、045=33、055=44、064 跳 0003 且 3002=55；输出类经 sim_output 自主握手 |
 | 并发公平仲裁集成（引擎搬运 ↔ CPU 写并发，挂起 / 轮转 / 数据隔离 / 互斥） | `regress/cpu-eng-concur.log` | 20 PASS / 0 FAIL，CONCURRENCY PASS |
 | RTL 引擎 FSM 自检（含越界 / 零长 / 复装 / 重叠正向·反向） | `regress/rtl-engine-selftest.log` | 53 判据 PASS |
 | RTL 写仲裁自检（4 深背压队列 + 轮转防饥饿 + FIFO 顺序 / 不饿死 + 满队拒绝 / 队头保护 / 排空重试） | `regress/rtl-arbiter-selftest.log` | 61 判据 PASS |
 | RTL 通路闭环自检 | `regress/rtl-path-loop.log` | 32 判据 PASS |
-| 既有 Verilator 基线 | `verify-verilator/test/output.bin` | MD5 `de88360aa7c21c3e07e771bec9f8e150`，未回退 |
+| 既有 Verilator 基线（P2-7 本轮复跑） | `verify-verilator/test/output.bin` | MD5 `de88360aa7c21c3e07e771bec9f8e150`，与 `output.bin.ref` 匹配，退出码 0，未回退 |
