@@ -73,7 +73,9 @@ module memory #(
 
     reg [30:0] write_data_r;
     reg [30:0] read_data_r;
-    reg [11:0] addr_r;
+    // 写/读地址分设寄存器：避免同一 reg 被两个时序块驱动（综合多驱动冲突）。
+    reg [11:0] addr_wr_r;
+    reg [11:0] addr_rd_r;
 
     reg writing;
     reg reading;
@@ -85,10 +87,10 @@ module memory #(
     always @(posedge clk) begin
         if (~resetn) begin
             write_data_r <= 31'b0;
-            addr_r       <= 12'b0;
+            addr_wr_r    <= 12'b0;
         end else if (do_mem_write && !cpu_hold) begin
             write_data_r <= write_data;
-            addr_r       <= addr;
+            addr_wr_r    <= addr;
         end
     end
 
@@ -105,13 +107,13 @@ module memory #(
 
     // 读地址锁存（do_mem_read 拍）
     always @(posedge clk) begin
-        if (do_mem_read) addr_r <= addr;
+        if (do_mem_read) addr_rd_r <= addr;
     end
 
     // ---- 写主收敛到仲裁器 ----
     // CPU 写主：writing 拍（请求已延迟一拍对齐数组写口径）。
     wire        cpu_wr_req  = writing;
-    wire [11:0] cpu_wr_addr = addr_r;
+    wire [11:0] cpu_wr_addr = addr_wr_r;
     wire [30:0] cpu_wr_data = write_data_r;
 
     // 引擎子系统写主：拷贝引擎搬运 + 装配模块状态镜像。二者同拍冲突时
@@ -159,7 +161,7 @@ module memory #(
     // 读：reading 拍锁存数组读出
     always @(posedge clk) begin
         if (~resetn) read_data_r <= 31'b0;
-        else if (reading) read_data_r <= mem[addr_r];
+        else if (reading) read_data_r <= mem[addr_rd_r];
     end
 
     always @(posedge clk) begin

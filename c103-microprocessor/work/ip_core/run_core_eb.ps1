@@ -35,11 +35,13 @@ if (-not (Test-Path $out)) { Write-Host "FAIL output.bin not produced"; exit 1 }
 
 $hOut = (Get-FileHash $out -Algorithm MD5).Hash.ToLower()
 $hRef = (Get-FileHash $ref -Algorithm MD5).Hash.ToLower()
-Write-Host "output.bin      MD5: $hOut"
-Write-Host "output.bin.ref  MD5: $hRef"
-if ($hOut -eq $hRef) {
-    Write-Host "CORE E2E PASS: output matches reference"
-} else {
-    Write-Host "CORE E2E FAIL: output differs from reference"
-    exit 1
-}
+$match = ($hOut -eq $hRef)
+$lineOut = "output.bin      MD5: $hOut"
+$lineRef = "output.bin.ref  MD5: $hRef"
+$lineVerdict = if ($match) { "CORE E2E PASS: output matches reference" } else { "CORE E2E FAIL: output differs from reference" }
+Write-Host $lineOut
+Write-Host $lineRef
+Write-Host $lineVerdict
+# 哈希比对结论一并写入回归日志，保证日志自含证据链（不依赖控制台/退出码回溯）
+Add-Content -Path $log -Value $lineOut, $lineRef, $lineVerdict
+if (-not $match) { exit 1 }

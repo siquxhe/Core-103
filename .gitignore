@@ -10,3 +10,9 @@
 
 # 仿真生成输出（参考基线 *.bin.ref 与输入 input.bin / task.seq 保留）
 **/test/output.bin
+
+# 可再生产物快照（regenerate-test-program.ps1 固定种子生成，不入库冻结）
+/test-program-gen/
+
+# 顶层兼容层备份（正本在 simulator/src_c/err.h）
+/compat/

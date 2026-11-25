@@ -58,7 +58,11 @@ try {
 
         $hOut = (Get-FileHash (Join-Path $testDir "output.bin") -Algorithm MD5).Hash.ToLower()
         $ok = ($hOut -eq $c.Ref)
-        $results += [pscustomobject]@{ Case = $c.Name; Out = $hOut; Ref = $c.Ref; Result = if ($ok) { "PASS" } else { "FAIL" } }
+        $verdict = if ($ok) { "PASS" } else { "FAIL" }
+        $results += [pscustomobject]@{ Case = $c.Name; Out = $hOut; Ref = $c.Ref; Result = $verdict }
+        # 每例哈希比对结论写入回归日志，保证日志自含证据链
+        $caseLine = ("{0}  Out={1}  Ref={2}  {3}" -f $c.Name, $hOut, $c.Ref, $verdict)
+        Add-Content -Path $log -Value $caseLine
         if (-not $ok) { Write-Host "$($c.Name) FAIL: $hOut != $($c.Ref)" }
     }
 } finally {
@@ -71,6 +75,11 @@ try {
     }
 }
 
-$results | Format-Table -AutoSize | Out-String -Width 160 | Write-Host
+$table = ($results | Format-Table -AutoSize | Out-String -Width 160).TrimEnd()
+Write-Host $table
+Add-Content -Path $log -Value $table
 $fail = ($results | Where-Object Result -eq "FAIL").Count
-if ($fail -eq 0) { Write-Host "IO-CASES PASS"; exit 0 } else { Write-Host "IO-CASES FAIL"; exit 1 }
+$verdict = if ($fail -eq 0) { "IO-CASES PASS" } else { "IO-CASES FAIL" }
+Write-Host $verdict
+Add-Content -Path $log -Value $verdict
+if ($fail -eq 0) { exit 0 } else { exit 1 }
