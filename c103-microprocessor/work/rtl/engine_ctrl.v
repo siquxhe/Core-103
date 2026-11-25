@@ -134,14 +134,6 @@ always @(posedge clk or negedge resetn) begin
         wr_addr_r  <= 12'd0;
         wr_data_r  <= 31'd0;
         rd_addr_r  <= ADDR_GO;
-        cmd_q[0]   <= 31'd0;
-        cmd_q[1]   <= 31'd0;
-        cmd_q[2]   <= 31'd0;
-        cmd_q[3]   <= 31'd0;
-        cmd_q[4]   <= 31'd0;
-        cmd_q[5]   <= 31'd0;
-        cmd_q[6]   <= 31'd0;
-        cmd_q[7]   <= 31'd0;
     end else begin
         // 默认：写口撤请求，脉冲自清
         wr_req_r   <= 1'b0;
@@ -270,7 +262,14 @@ end
 // 不写同一索引；若同拍不同索引，非阻塞赋值各写各的元素。
 always @(posedge clk or negedge resetn) begin
     if (!resetn) begin
-        // cmd_q 清零在主时序复位块完成，此处不重复。
+        cmd_q[0] <= 31'd0;
+        cmd_q[1] <= 31'd0;
+        cmd_q[2] <= 31'd0;
+        cmd_q[3] <= 31'd0;
+        cmd_q[4] <= 31'd0;
+        cmd_q[5] <= 31'd0;
+        cmd_q[6] <= 31'd0;
+        cmd_q[7] <= 31'd0;
     end else begin
         if (local_wr_en && (local_wr_addr >= ADDR_SRC) && (local_wr_addr <= ADDR_ACK))
             cmd_q[local_wr_addr[2:0]] <= local_wr_data;
