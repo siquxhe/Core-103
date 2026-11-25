@@ -19,3 +19,7 @@
 
 # 顶层兼容层备份（正本在 simulator/src_c/err.h）
 /compat/
+
+# sby 形式验证工作目录（wrapper/.sby 源码入库，prove/cover 产物不冻结）
+**/formal/*_prove/
+**/formal/*_cover/

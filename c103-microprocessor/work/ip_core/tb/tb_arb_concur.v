@@ -9,8 +9,8 @@
  *     - 公平：轮转防饥饿，两主授权计数对称（差 ≤ 1）。
  *  B. 并发灌满载队背压：双主全速并发请求（单主直通不堆积，须双主竞争才净堆积），
  *     观测 full/stall 置位；排空余量后核对落位字编码自洽（来源标记 + 序号匹配），
- *     未落位(0)槽位不判 FAIL。满队同拍入出边界与高压排空队尾落位鲁棒性属 FIFO
- *     指针/轮转范畴，留待形式验证（sby），本用例不据此强判不丢。
+ *     未落位(0)槽位不判 FAIL。守恒判据 B4：入队==出队授权==RAM落位，双主无丢笔/
+ *     槽位覆盖。授权互斥另由 sby 形式证明（见 formal/arb_formal.sby）。
  *
  * 自检判据：每项 PASS/FAIL 计数，末尾 `ARBCONC PASS=<n> FAIL=<n>`，全绿 E2E PASS。
  */
@@ -55,6 +55,7 @@ module tb_arb_concur;
     integer wr_total;
     integer guard;
     integer b_idx, b_cpu_in, b_eng_in;
+    integer b_cpu_enq, b_eng_enq, b_cpu_deq, b_eng_deq, b_cpu_wr, b_eng_wr;
     reg        stall_seen;
     reg [30:0] v;
     reg [30:0] expect;
@@ -87,6 +88,16 @@ module tb_arb_concur;
         end
     end
 
+    // 阶段 B 守恒计数：入队 / 出队授权 / RAM 落位（口径与 RTL 条件一致，沿前电平）
+    always @(posedge clk) begin
+        if (cpu_wr_req && !cpu_full) b_cpu_enq = b_cpu_enq + 1;
+        if (eng_wr_req && !eng_full) b_eng_enq = b_eng_enq + 1;
+        if (grant_cpu) b_cpu_deq = b_cpu_deq + 1;
+        if (grant_eng) b_eng_deq = b_eng_deq + 1;
+        if (ram_wr_req && grant_cpu) b_cpu_wr = b_cpu_wr + 1;
+        if (ram_wr_req && grant_eng) b_eng_wr = b_eng_wr + 1;
+    end
+
     // 数据编码：CPU 高位置 1，引擎高位置 0；低 5 位为序号
     function [30:0] code;
         input        src_cpu;
@@ -106,6 +117,8 @@ module tb_arb_concur;
         cpu_in = 0; eng_in = 0;
         gc = 0; ge = 0; wr_total = 0;
         b_idx = 0; b_cpu_in = 0; b_eng_in = 0;
+        b_cpu_enq = 0; b_eng_enq = 0; b_cpu_deq = 0; b_eng_deq = 0;
+        b_cpu_wr = 0; b_eng_wr = 0;
         stall_seen = 1'b0;
         timeout_a = 1'b0;
 
@@ -186,6 +199,8 @@ module tb_arb_concur;
         @(negedge clk); @(negedge clk);
 
         b_idx = 0; b_cpu_in = 0; b_eng_in = 0; stall_seen = 1'b0;
+        b_cpu_enq = 0; b_eng_enq = 0; b_cpu_deq = 0; b_eng_deq = 0;
+        b_cpu_wr = 0; b_eng_wr = 0;
         while (b_idx < BURST) begin
             @(negedge clk);
             // CPU 全速发（地址 40+idx）；满队拍不入队，记录集合
@@ -212,10 +227,17 @@ module tb_arb_concur;
         if (stall_seen === 1'b1) pass = pass + 1;
         else begin fail = fail + 1; $display("FAIL no full/stall observed under concurrent burst"); end
 
-        // 排空余量：让已出队字落 RAM（满队高压排空的队尾落位鲁棒性
-        // 属 FIFO 指针/轮转边界，留待形式验证；本用例不据此强判不丢）。
+        // 排空余量：让已出队字落 RAM。
         guard = 0;
         while (guard < 32) begin @(negedge clk); guard = guard + 1; end
+
+        // 判据 B4：守恒——入队 == 出队授权 == RAM 落位，双主均无丢笔/槽位覆盖
+        $display("DIAG B conserv: cpu enq=%0d deq=%0d wr=%0d | eng enq=%0d deq=%0d wr=%0d",
+            b_cpu_enq, b_cpu_deq, b_cpu_wr, b_eng_enq, b_eng_deq, b_eng_wr);
+        if (b_cpu_enq === b_cpu_deq && b_cpu_deq === b_cpu_wr) pass = pass + 1;
+        else begin fail = fail + 1; $display("FAIL cpu conserv enq=%0d deq=%0d wr=%0d", b_cpu_enq, b_cpu_deq, b_cpu_wr); end
+        if (b_eng_enq === b_eng_deq && b_eng_deq === b_eng_wr) pass = pass + 1;
+        else begin fail = fail + 1; $display("FAIL eng conserv enq=%0d deq=%0d wr=%0d", b_eng_enq, b_eng_deq, b_eng_wr); end
 
         // 判据 B2：CPU 区落位字编码自洽——非零字必须来源标记=CPU、序号匹配；未落位(0)不判 FAIL
         for (i = 0; i < BURST; i = i + 1) begin
