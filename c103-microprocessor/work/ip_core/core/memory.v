@@ -60,10 +60,20 @@ module memory #(
     output        arb_conflict,
     // 仲裁背压回接：1 = 对应写主队列已满
     output        cpu_stall,
-    output        eng_stall
+    output        eng_stall,
+
+    // ---- 命令块写旁路（路线甲：外部写命令块八字时透传到 engine_ctrl 本地寄存器） ----
+    output        cmd_wr_en,
+    output [11:0] cmd_wr_addr,
+    output [30:0] cmd_wr_data
 );
 
     reg [30:0] mem [0:WORDS-1];
+
+    // 命令块八字区间（八进制 2400..2407）：剥离到 engine_ctrl 本地寄存器组，
+    // 外部写命中该区间时经 cmd_wr_* 旁路透传，供本地寄存器同步更新。
+    localparam [11:0] CMD_BASE = 12'o2400;
+    localparam [11:0] CMD_TOP   = 12'o2407;
 
     wire do_mem_read  = mem_read_from_pu  || mem_read_from_pnl;
     wire do_mem_write = mem_write_from_io || mem_write_from_pnl;
@@ -161,6 +171,15 @@ module memory #(
         if (ram_wr_req) mem[ram_wr_addr] <= ram_wr_data;
         if (dbg_wr_en)  mem[dbg_wr_addr] <= dbg_wr_data;
     end
+
+    // 命令块写旁路：外部写（功能写经仲裁器 / 仿真 dbg 预填）命中 2400..2407 时，
+    // 透传到 engine_ctrl 本地命令块寄存器；主存同时保留一份副本供 CPU 轮询。
+    wire [11:0] cmd_w_addr = dbg_wr_en ? dbg_wr_addr : ram_wr_addr;
+    wire [30:0] cmd_w_data = dbg_wr_en ? dbg_wr_data : ram_wr_data;
+    wire        cmd_hit_addr = (cmd_w_addr >= CMD_BASE) && (cmd_w_addr <= CMD_TOP);
+    assign cmd_wr_en   = (ram_wr_req || dbg_wr_en) && cmd_hit_addr;
+    assign cmd_wr_addr = cmd_w_addr;
+    assign cmd_wr_data = cmd_w_data;
 
     // 读：reading 拍锁存数组读出
     always @(posedge clk) begin

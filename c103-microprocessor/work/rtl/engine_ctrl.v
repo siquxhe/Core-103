@@ -18,8 +18,15 @@
  *   2406 STS_ERR    状态镜像：bit0=err，bit[2:1]=err_code
  *   2407 CMD_ACK   1=ack_done，2=ack_err；装配后自清
  *
- * 时序与既有 RTL 一致：clk 上升沿，resetn 低有效；命令块读为组合读，
- * 状态镜像写为同步写（与引擎旁路 eng_wr 同节奏）。
+ * 时序与既有 RTL 一致：clk 上升沿，resetn 低有效；命令块读为本地寄存器
+ * 组合读，状态镜像写为同步写（与引擎旁路 eng_wr 同节奏）。
+ *
+ * 路线甲（端口收敛）：命令块八字剥离为主存外的本地寄存器组 cmd_q。
+ *  - ctrl_rd 读本地 cmd_q，不再占主存 BRAM 读口；本地寄存器组合读无一拍
+ *    BRAM 延迟，FSM 紧凑节拍保持不变。
+ *  - 外部参数写（纸带 CPU 写 / 仿真 dbg 预填）经 memory 写旁路 local_wr_*
+ *    更新本地；状态镜像（BUSY/DONE/ERR/ACK）由本模块双写：本地 cmd_q 与
+ *    主存副本（ctrl_wr → 仲裁器）各一份，CPU 固件经主读口轮询副本。
  */
 
 module engine_ctrl #(
@@ -42,6 +49,11 @@ module engine_ctrl #(
     output        ctrl_wr_req,
     output [11:0] ctrl_wr_addr,
     output [30:0] ctrl_wr_data,
+
+    // ---- 命令块本地寄存器写旁路（来自 memory：外部写命令块地址时透传） ----
+    input         local_wr_en,
+    input  [11:0] local_wr_addr,
+    input  [30:0] local_wr_data,
 
     // ---- 到拷贝引擎 ----
     output [11:0] cmd_src,
@@ -78,8 +90,14 @@ reg        wr_req_r;
 reg [11:0] wr_addr_r;
 reg [30:0] wr_data_r;
 
+// 命令块本地寄存器组（路线甲：剥离出主存的八字命令块）
+// 索引 0=SRC 1=DST 2=LEN 3=GO 4=BUSY 5=DONE 6=ERR 7=ACK
+reg [30:0] cmd_q [0:7];
+
 // 读地址选择（组合）
 reg [11:0] rd_addr_r;
+wire [2:0] rd_idx = rd_addr_r[2:0];   // 2400..2407 低三位即索引
+
 assign ctrl_rd_req  = 1'b1;
 assign ctrl_rd_addr = rd_addr_r;
 
@@ -99,6 +117,9 @@ assign ctrl_wr_data = wr_data_r;
 wire [30:0] word_one  = 31'd1;
 wire [30:0] word_zero  = 31'd0;
 
+// 本地命令块组合读（不占主存 BRAM 读口，无一拍延迟）
+wire [30:0] local_rd_data = cmd_q[rd_idx];
+
 always @(posedge clk or negedge resetn) begin
     if (!resetn) begin
         state_r    <= S_IDLE;
@@ -113,6 +134,14 @@ always @(posedge clk or negedge resetn) begin
         wr_addr_r  <= 12'd0;
         wr_data_r  <= 31'd0;
         rd_addr_r  <= ADDR_GO;
+        cmd_q[0]   <= 31'd0;
+        cmd_q[1]   <= 31'd0;
+        cmd_q[2]   <= 31'd0;
+        cmd_q[3]   <= 31'd0;
+        cmd_q[4]   <= 31'd0;
+        cmd_q[5]   <= 31'd0;
+        cmd_q[6]   <= 31'd0;
+        cmd_q[7]   <= 31'd0;
     end else begin
         // 默认：写口撤请求，脉冲自清
         wr_req_r   <= 1'b0;
@@ -125,26 +154,26 @@ always @(posedge clk or negedge resetn) begin
         S_IDLE: begin
             rd_addr_r <= ADDR_GO;
             phase_r   <= 2'd0;
-            if (ctrl_rd_data != 31'd0) begin
+            if (local_rd_data != 31'd0) begin
                 state_r   <= S_LD_SRC;
                 rd_addr_r <= ADDR_SRC;
             end
         end
 
         S_LD_SRC: begin
-            src_r     <= ctrl_rd_data[11:0];
+            src_r     <= local_rd_data[11:0];
             rd_addr_r <= ADDR_DST;
             state_r   <= S_LD_DST;
         end
 
         S_LD_DST: begin
-            dst_r     <= ctrl_rd_data[11:0];
+            dst_r     <= local_rd_data[11:0];
             rd_addr_r <= ADDR_LEN;
             state_r   <= S_LD_LEN;
         end
 
         S_LD_LEN: begin
-            len_r      <= ctrl_rd_data[11:0];
+            len_r      <= local_rd_data[11:0];
             // 自清 go 标志，并发启动脉冲
             wr_req_r   <= 1'b1;
             wr_addr_r  <= ADDR_GO;
@@ -181,7 +210,7 @@ always @(posedge clk or negedge resetn) begin
                 wr_data_r <= word_one;
                 phase_r   <= 2'd2;
             end else if (phase_r == 2'd2) begin
-                if (ctrl_rd_data != 31'd0) begin
+                if (local_rd_data != 31'd0) begin
                     // 收到 ack_done：发完成握手脉冲，清 ack 字
                     ack_done_r <= 1'b1;
                     wr_req_r   <= 1'b1;
@@ -212,7 +241,7 @@ always @(posedge clk or negedge resetn) begin
                 wr_data_r <= {28'd0, err_code, err};
                 phase_r   <= 2'd2;
             end else if (phase_r == 2'd2) begin
-                if (ctrl_rd_data != 31'd0) begin
+                if (local_rd_data != 31'd0) begin
                     ack_err_r <= 1'b1;
                     wr_req_r  <= 1'b1;
                     wr_addr_r <= ADDR_ACK;
@@ -231,6 +260,22 @@ always @(posedge clk or negedge resetn) begin
 
         default: state_r <= S_IDLE;
         endcase
+    end
+end
+
+// 本地命令块寄存器更新：
+//  - local_wr_* 旁路：memory 透传外部写（纸带 CPU 写 / 仿真预填）命令块；
+//  - 状态镜像双写：本模块 wr_req_r 写本地 cmd_q，与 ctrl_wr 主存副本同拍。
+// 两个写源由上层仲裁/装载时序错开（参数写在装载期，状态写在装配/搬运期），
+// 不写同一索引；若同拍不同索引，非阻塞赋值各写各的元素。
+always @(posedge clk or negedge resetn) begin
+    if (!resetn) begin
+        // cmd_q 清零在主时序复位块完成，此处不重复。
+    end else begin
+        if (local_wr_en && (local_wr_addr >= ADDR_SRC) && (local_wr_addr <= ADDR_ACK))
+            cmd_q[local_wr_addr[2:0]] <= local_wr_data;
+        if (wr_req_r)
+            cmd_q[wr_addr_r[2:0]] <= wr_data_r;
     end
 end
 

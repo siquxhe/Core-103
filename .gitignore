@@ -8,6 +8,9 @@
 # 回归日志（可由 run_*.ps1 / run_rtl_sim.ps1 重跑生成）
 *.log
 
+# 厂商综合可再生产物（变体源码入库，build/ 网表/报告/资源快照不冻结）
+**/regress/**/build/
+
 # 仿真生成输出（参考基线 *.bin.ref 与输入 input.bin / task.seq 保留）
 **/test/output.bin
 

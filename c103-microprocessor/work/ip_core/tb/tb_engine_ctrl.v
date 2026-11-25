@@ -62,6 +62,11 @@ module tb_engine_ctrl;
     wire [11:0] ctrl_wr_addr;
     wire [30:0] ctrl_wr_data;
 
+    // ---- 命令块写旁路（memory → engine_ctrl 本地寄存器） ----
+    wire        cmd_wr_en;
+    wire [11:0] cmd_wr_addr;
+    wire [30:0] cmd_wr_data;
+
     // ---- 调试口 ----
     reg         dbg_wr_en;
     reg  [11:0] dbg_wr_addr, dbg_rd_addr;
@@ -159,7 +164,10 @@ module tb_engine_ctrl;
         .dbg_wr_addr             ( dbg_wr_addr             ),
         .dbg_wr_data             ( dbg_wr_data            ),
         .dbg_rd_addr             ( dbg_rd_addr            ),
-        .dbg_rd_data             ( dbg_rd_data            )
+        .dbg_rd_data             ( dbg_rd_data            ),
+        .cmd_wr_en               ( cmd_wr_en               ),
+        .cmd_wr_addr             ( cmd_wr_addr             ),
+        .cmd_wr_data             ( cmd_wr_data            )
     );
 
     // ---- DUT：引擎 ----
@@ -199,6 +207,9 @@ module tb_engine_ctrl;
         .ctrl_wr_req    ( ctrl_wr_req  ),
         .ctrl_wr_addr   ( ctrl_wr_addr),
         .ctrl_wr_data   ( ctrl_wr_data ),
+        .local_wr_en    ( cmd_wr_en    ),
+        .local_wr_addr  ( cmd_wr_addr   ),
+        .local_wr_data  ( cmd_wr_data  ),
         .cmd_src        ( cmd_src      ),
         .cmd_dst        ( cmd_dst      ),
         .cmd_len        ( cmd_len      ),

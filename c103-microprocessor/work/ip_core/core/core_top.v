@@ -75,7 +75,12 @@ module core_top (
     // ---- 写口仲裁观测（直通内部 memory） ----
     output        grant_cpu,
     output        grant_eng,
-    output        arb_conflict
+    output        arb_conflict,
+
+    // ---- 命令块写旁路（直通内部 memory，到 engine_ctrl 本地寄存器） ----
+    output        cmd_wr_en,
+    output [11:0] cmd_wr_addr,
+    output [30:0] cmd_wr_data
 );
 
 // arith_unit output signals
@@ -442,7 +447,10 @@ memory  u_memory (
     .dbg_rd_data             ( dbg_rd_data             ),
     .grant_cpu               ( grant_cpu               ),
     .grant_eng               ( grant_eng               ),
-    .arb_conflict            ( arb_conflict            )
+    .arb_conflict            ( arb_conflict            ),
+    .cmd_wr_en               ( cmd_wr_en               ),
+    .cmd_wr_addr             ( cmd_wr_addr             ),
+    .cmd_wr_data             ( cmd_wr_data            )
 );
 
 io_unit  u_io_unit (
