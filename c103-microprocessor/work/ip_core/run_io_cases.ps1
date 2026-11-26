@@ -13,8 +13,8 @@ Initialize-CoreToolchain
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $work = Split-Path -Parent $here
-# $here = c103-microprocessor/work/ip_core；项目根为其上三级（test-program 在项目根）
-$root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $here))
+# $here = <root>/Core-103/c103-microprocessor/work/ip_core；项目根为其上四级（test-program 在项目根）
+$root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $here)))
 $tp   = Join-Path $root "test-program"
 $reg  = Join-Path $work "regress"
 New-Item -ItemType Directory -Force -Path $reg | Out-Null

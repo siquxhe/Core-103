@@ -14,6 +14,10 @@
 # 仿真生成输出（参考基线 *.bin.ref 与输入 input.bin / task.seq 保留）
 **/test/output.bin
 
+# image-pack 镜像产物（loader 回归每次重生成）
+**/ip_core/case.bin
+**/ip_core/case.hex
+
 # 可再生产物快照（regenerate-test-program.ps1 固定种子生成，不入库冻结）
 /test-program-gen/
 

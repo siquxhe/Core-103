@@ -7,8 +7,8 @@ $coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScript
 Initialize-CoreToolchain
 
 $here   = Split-Path -Parent $MyInvocation.MyCommand.Path
-# $here = <root>/c103-microprocessor/work/ip_core；项目根再上三级
-$root   = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $here))
+# $here = <root>/Core-103/c103-microprocessor/work/ip_core；项目根（兄弟仓平级目录）再上四级
+$root   = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $here)))
 $reg    = Join-Path (Split-Path -Parent $here) "regress"
 $l3dir  = Join-Path $reg "l3-loader-firmware"
 New-Item -ItemType Directory -Force -Path $reg | Out-Null
