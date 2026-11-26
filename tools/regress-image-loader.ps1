@@ -14,8 +14,8 @@ $packDir = Join-Path $root "tape-converter\src_imagepack"
 $packExe = Join-Path $packDir "image-pack.exe"
 $simDir  = Join-Path $root "simulator\src_c"
 $simExe  = Join-Path $simDir "simulator.exe"
-$ipCore  = Join-Path $root "c103-microprocessor\work\ip_core"
-$rtlDir  = Join-Path $root "c103-microprocessor\work\rtl"
+$ipCore  = Join-Path $root "Core-103\c103-microprocessor\work\ip_core"
+$rtlDir  = Join-Path $root "Core-103\c103-microprocessor\work\rtl"
 $ref103  = Join-Path $root "test-program\04_and\input.103"
 
 # 04_and 段定义（八进制）：程序段 0000-1200 -> 0000；数据段 3000-3777 -> 3000。
