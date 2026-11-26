@@ -74,13 +74,13 @@
 
 **依赖工具链**：PowerShell 7、iverilog / vvp（OSS CAD Suite）、w64devkit（gcc，C 模型与打包器编译）、Git（coreutils）。
 
-回归脚本经公共片段 `tools/toolchain.ps1` 探测工具链：环境变量优先，未设置时回退常见安装路径（仅在目录实际存在时追加），不在脚本内硬编码某台机器的绝对位置。可用环境变量覆盖安装位置：
+回归脚本经公共片段 `tools/toolchain.ps1` 定位工具链：只通过下列环境变量声明安装位置，脚本内不写死任何本机绝对路径；未设置对应变量时不主动追加，沿用当前系统 PATH。
 
-| 工具 | 环境变量 | 默认回退路径 |
-|---|---|---|
-| w64devkit | `W64DEVKIT_BIN` / `W64DEVKIT_HOME` | `C:\Program Files\w64devkit\bin` |
-| OSS CAD Suite | `OSS_CAD_SUITE` | `C:\oss-cad-suite`（`bin`、`lib`） |
-| Git usr/bin | `GIT_USR_BIN` | `C:\Program Files\Git\usr\bin` |
+| 工具 | 环境变量 |
+|---|---|
+| w64devkit | `W64DEVKIT_BIN` / `W64DEVKIT_HOME` |
+| OSS CAD Suite | `OSS_CAD_SUITE` |
+| Git usr/bin | `GIT_USR_BIN` |
 
 ```powershell
 # 核心端到端：直接执行冻结加法程序并比对 MD5

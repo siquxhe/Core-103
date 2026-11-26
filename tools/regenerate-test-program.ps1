@@ -12,7 +12,7 @@ $sim     = Join-Path $root "simulator\src_c\simulator.exe"
 $c2t     = Join-Path $root "tape-converter\src_char2tape\char2tape.exe"
 $runner  = Join-Path $toolsDir "gen_helper.py"
 
-# 工具链 PATH：环境变量优先 + 常见路径存在才追加（见 tools/toolchain.ps1）
+# 工具链 PATH：纯环境变量定位，未设置沿用系统 PATH（见 tools/toolchain.ps1）
 . (Join-Path $toolsDir "toolchain.ps1")
 Initialize-CoreToolchain
 
