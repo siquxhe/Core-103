@@ -68,7 +68,7 @@ module tb_arbiter;
 
     task check;
         input        cond;
-        input [255:0] name;
+        input [511:0] name;  // 64 字符余量：断言标签最长约 46 字符，256 位宽会截断超宽前导
         begin
             if (cond) begin
                 checks = checks + 1;

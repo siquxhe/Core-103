@@ -39,6 +39,28 @@
 
 > 上游派生文件与自研文件的归属划分见根目录 [`NOTICE`](NOTICE)。
 
+## 跨仓工作区布局
+
+本工程由主仓与若干平级兄弟仓组成；全新克隆时需把它们放在同一个项目根目录下，回归脚本按此相对层级定位兄弟仓：
+
+```
+<项目根>/
+├── Core-103/          # 主仓（本仓：RTL、内核副本、回归脚本、文档）
+├── simulator/        # C 模拟器（machine_mem、103 解释器、err.h 兼容层）
+├── tape-converter/    # 汇编 / 磁带转换与镜像打包器
+├── test-program/      # 冻结测试程序与 MD5 参考基线
+├── verify-verilator/  # Verilator 验证链路（src_hw 与 hardware 同源）
+└── hardware/          # 上游现代硬件电路 Verilog 源
+```
+
+脚本中的相对回溯约定：
+
+- `work/ip_core/run_loader_*.ps1`、`run_io_cases.ps1`：`$root` 从 `ip_core/` 向上四级回溯到项目根，再进平级兄弟仓。
+- `tools/regress-image-loader.ps1`：`$root` 回溯到项目根，主仓内部路径补 `Core-103/` 层，兄弟仓仍在根下。
+- `work/Makefile`：simulator 相对路径回溯三级到项目根。
+
+> `test-program-gen/` 为生成物目录，不纳入版本控制。
+
 ## 已在仿真中闭环验证
 
 - **内核指令子集**：加、减、按位与、乘、除、无条件跳转、条件跳转（正 / 负两路）、074 绝对值跳转，以及八进制 / 十进制 BCD 输入打包与输出解包。
