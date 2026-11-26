@@ -3,7 +3,9 @@
 # 产物日志：../regress/rtl-engine-selftest.log、rtl-arbiter-selftest.log
 
 $ErrorActionPreference = "Stop"
-$env:Path = "C:\Program Files\Git\usr\bin;C:\Program Files\w64devkit\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib"
+$coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $coreRoot "tools\toolchain.ps1")
+Initialize-CoreToolchain
 
 $work = Split-Path -Parent $PSScriptRoot          # work/
 $rtl  = Join-Path $work "rtl"

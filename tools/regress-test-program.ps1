@@ -11,8 +11,9 @@ $tp      = Join-Path $root "test-program"
 $sim     = Join-Path $root "simulator\src_c\simulator.exe"
 $c2t     = Join-Path $root "tape-converter\src_char2tape\char2tape.exe"
 
-# 模拟器/纸带工具是 w64devkit 动态链接，需其 bin 在 PATH
-$env:PATH = "C:\Program Files\w64devkit\bin;$env:PATH"
+# 工具链 PATH：环境变量优先 + 常见路径存在才追加（见 tools/toolchain.ps1）
+. (Join-Path $toolsDir "toolchain.ps1")
+Initialize-CoreToolchain
 
 # 解析 README 参考 MD5：<hash>  <case>/output.bin
 $ref = @{}

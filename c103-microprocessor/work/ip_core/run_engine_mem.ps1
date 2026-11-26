@@ -3,7 +3,9 @@
 # 判据：引擎搬运后目的区逐字等于源区、源区未改写（tb_engine_mem 内置 PASS/FAIL）。
 
 $ErrorActionPreference = "Stop"
-$env:Path = "C:\Program Files\Git\usr\bin;C:\Program Files\w64devkit\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib"
+$coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $coreRoot "tools\toolchain.ps1")
+Initialize-CoreToolchain
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $reg  = Join-Path (Split-Path -Parent $here) "regress"

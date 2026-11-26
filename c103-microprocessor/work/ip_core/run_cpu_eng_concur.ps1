@@ -3,7 +3,9 @@
 # 判据：引擎搬运目的区逐字落位、CPU 并发写全部落数组、源区未改写、授权互斥。
 
 $ErrorActionPreference = "Stop"
-$env:Path = "C:\Program Files\Git\usr\bin;C:\Program Files\w64devkit\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib"
+$coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $coreRoot "tools\toolchain.ps1")
+Initialize-CoreToolchain
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $reg  = Join-Path (Split-Path -Parent $here) "regress"

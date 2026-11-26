@@ -72,7 +72,15 @@
 
 ## 快速开始
 
-依赖：PowerShell 7、iverilog / vvp（OSS CAD Suite）、w64devkit（C 模型编译）。回归脚本内部已前置工具链 PATH。
+**依赖工具链**：PowerShell 7、iverilog / vvp（OSS CAD Suite）、w64devkit（gcc，C 模型与打包器编译）、Git（coreutils）。
+
+回归脚本经公共片段 `tools/toolchain.ps1` 探测工具链：环境变量优先，未设置时回退常见安装路径（仅在目录实际存在时追加），不在脚本内硬编码某台机器的绝对位置。可用环境变量覆盖安装位置：
+
+| 工具 | 环境变量 | 默认回退路径 |
+|---|---|---|
+| w64devkit | `W64DEVKIT_BIN` / `W64DEVKIT_HOME` | `C:\Program Files\w64devkit\bin` |
+| OSS CAD Suite | `OSS_CAD_SUITE` | `C:\oss-cad-suite`（`bin`、`lib`） |
+| Git usr/bin | `GIT_USR_BIN` | `C:\Program Files\Git\usr\bin` |
 
 ```powershell
 # 核心端到端：直接执行冻结加法程序并比对 MD5
@@ -87,8 +95,8 @@ pwsh -File c103-microprocessor/work/rtl/run_rtl_sim.ps1
 ## 边界与未决项
 
 - 传送变体（005 / 015 / 045 / 055 / 064）除端到端加法与 IO 路径外的组合尚未单独覆盖。
-- 仲裁器 `full` 背压标志已引出，尚未接回写主侧 stall；满队丢弃 / 队头保护的定向激励未覆盖。
-- 源 / 目的重叠区的复制方向策略（上移 / 下移）未定；当前按低地址 → 高地址逐字搬运。
+- 仲裁器 `stall`/`full` 已引出，满队队头保护、授权互斥与守恒已由单元仿真与形式验证覆盖；整链路 `core_top` 暂未把背压直通回写主侧（`wr_stall` 暂 tie 0），待整链路背压闭环。
+- 拷贝引擎已按重叠关系自适应选向前向 / 反向：目的在源高侧且重叠时反向（高地址 → 低地址），其余情形正向（低地址 → 高地址）。
 - 行为数组 RAM 与真实 S011 / BRAM 的一拍读延迟缓冲、片选与位掩码边界未复核；上板前需回接真实 RAM 模型或 Gowin BRAM 并补综合 / 约束。
 - Flash / ROM 行为模型、块目录项（镜像 ID / 入口 / 字数 / 类型 / 校验和）为后续阶段。
 - 指令集完整覆盖需对照原始《103 机程序汇编》或 RTL 译码表逐项核对。

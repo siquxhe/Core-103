@@ -2,7 +2,9 @@
 # 用法：pwsh -File run_loader_core.ps1
 
 $ErrorActionPreference = "Stop"
-$env:Path = "C:\Program Files\w64devkit\bin;C:\Program Files\Git\usr\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib"
+$coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $coreRoot "tools\toolchain.ps1")
+Initialize-CoreToolchain
 
 $here   = Split-Path -Parent $MyInvocation.MyCommand.Path
 # $here = <root>/c103-microprocessor/work/ip_core；项目根再上三级

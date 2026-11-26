@@ -3,7 +3,9 @@
 # 场景：最小加法程序经引擎两段搬运到目的区，核心从 0000 执行，校验 3001/3002 == 7。
 
 $ErrorActionPreference = "Stop"
-$env:Path = "C:\Program Files\Git\usr\bin;C:\Program Files\w64devkit\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib"
+$coreRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $coreRoot "tools\toolchain.ps1")
+Initialize-CoreToolchain
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $reg  = Join-Path (Split-Path -Parent $here) "regress"

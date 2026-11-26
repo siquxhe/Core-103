@@ -8,7 +8,9 @@ $ErrorActionPreference = "Stop"
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root    = Split-Path -Parent (Split-Path -Parent $toolsDir)
 
-$env:PATH = "C:\Program Files\w64devkit\bin;C:\Program Files\Git\usr\bin;C:\oss-cad-suite\bin;C:\oss-cad-suite\lib;$env:PATH"
+# 工具链 PATH：环境变量优先 + 常见路径存在才追加（见 tools/toolchain.ps1）
+. (Join-Path $toolsDir "toolchain.ps1")
+Initialize-CoreToolchain
 
 $packDir = Join-Path $root "tape-converter\src_imagepack"
 $packExe = Join-Path $packDir "image-pack.exe"
